@@ -40,12 +40,16 @@ cmd_deploy() {
         echo "Usage: lab deploy <service> [dev|prod] [--no-cache]"
         echo ""
         echo "Pull, build, start, health-check, and tail logs for a service."
-        echo "For split-env services (e.g. voice_bridge), specify dev or prod (default: prod)."
-        echo "Use --no-cache to force a full rebuild."
+        echo ""
+        echo "Options:"
+        echo "  dev|prod     Target environment. Required for split-env services"
+        echo "               (e.g. voice_bridge). Defaults to prod if omitted —"
+        echo "               a warning is shown for split-env services."
+        echo "  --no-cache   Force a full Docker rebuild (skip layer cache)."
         return 0
     fi
     shift
-    local env="$DEFAULT_ENV"
+    local env=""
     local no_cache=""
 
     while [[ $# -gt 0 ]]; do
@@ -63,6 +67,16 @@ cmd_deploy() {
         echo "Available services:"
         _list_services | sed 's/^/  /'
         return 1
+    fi
+
+    local env_mode
+    env_mode=$(_get "$svc" "env_mode")
+
+    if [[ -z "$env" ]]; then
+        env="$DEFAULT_ENV"
+        if [[ "$env_mode" == "split" ]]; then
+            _warn "${svc} has split environments — deploying ${BOLD}${env}${NC}${YELLOW}. Pass 'dev' or 'prod' to be explicit.${NC}"
+        fi
     fi
 
     local compose repo container health
@@ -188,7 +202,11 @@ cmd_logs() {
     if [[ "$svc" == "--help" || "$svc" == "-h" ]]; then
         echo "Usage: lab logs <service> [--tail N] [dev|prod]"
         echo ""
-        echo "View container logs. Default: last 50 lines, prod environment."
+        echo "View container logs."
+        echo ""
+        echo "Options:"
+        echo "  --tail N     Number of lines to show (default: 50)."
+        echo "  dev|prod     Target environment for split-env services (default: prod)."
         return 0
     fi
     shift
