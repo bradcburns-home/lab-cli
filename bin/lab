@@ -36,6 +36,14 @@ _list_services() {
 
 cmd_deploy() {
     local svc="${1:?Usage: lab deploy <service> [dev|prod] [--no-cache]}"
+    if [[ "$svc" == "--help" || "$svc" == "-h" ]]; then
+        echo "Usage: lab deploy <service> [dev|prod] [--no-cache]"
+        echo ""
+        echo "Pull, build, start, health-check, and tail logs for a service."
+        echo "For split-env services (e.g. voice_bridge), specify dev or prod (default: prod)."
+        echo "Use --no-cache to force a full rebuild."
+        return 0
+    fi
     shift
     local env="$DEFAULT_ENV"
     local no_cache=""
@@ -44,6 +52,7 @@ cmd_deploy() {
         case "$1" in
             dev|prod) env="$1" ;;
             --no-cache) no_cache="--no-cache" ;;
+            -h|--help) cmd_deploy --help; return 0 ;;
             *) _err "Unknown argument: $1"; return 1 ;;
         esac
         shift
@@ -145,6 +154,13 @@ cmd_deploy() {
 
 cmd_test() {
     local svc="${1:?Usage: lab test <service>}"
+    if [[ "$svc" == "--help" || "$svc" == "-h" ]]; then
+        echo "Usage: lab test <service>"
+        echo ""
+        echo "Run pytest for a service. Uses the local venv if one exists,"
+        echo "otherwise runs tests via docker build."
+        return 0
+    fi
 
     if ! jq -e --arg svc "$svc" 'has($svc)' "$REGISTRY" >/dev/null 2>&1; then
         _err "Unknown service: $svc"
@@ -169,6 +185,12 @@ cmd_test() {
 
 cmd_logs() {
     local svc="${1:?Usage: lab logs <service> [--tail N] [dev|prod]}"
+    if [[ "$svc" == "--help" || "$svc" == "-h" ]]; then
+        echo "Usage: lab logs <service> [--tail N] [dev|prod]"
+        echo ""
+        echo "View container logs. Default: last 50 lines, prod environment."
+        return 0
+    fi
     shift
     local tail_n=50
     local env="$DEFAULT_ENV"
@@ -177,6 +199,7 @@ cmd_logs() {
         case "$1" in
             --tail) tail_n="${2:?--tail requires a number}"; shift ;;
             dev|prod) env="$1" ;;
+            -h|--help) cmd_logs --help; return 0 ;;
             *) _err "Unknown argument: $1"; return 1 ;;
         esac
         shift
@@ -193,6 +216,12 @@ cmd_logs() {
 }
 
 cmd_health() {
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+        echo "Usage: lab health [service]"
+        echo ""
+        echo "Check health of all services, or a single service if specified."
+        return 0
+    fi
     local filter="${1:-}"
 
     echo -e "${BOLD}Service Health${NC}"
@@ -267,6 +296,15 @@ _ha_api() {
 
 cmd_ha() {
     local subcmd="${1:?Usage: lab ha <deploy|check|reload|restart>}"
+    if [[ "$subcmd" == "--help" || "$subcmd" == "-h" ]]; then
+        echo "Usage: lab ha <deploy|check|reload|restart>"
+        echo ""
+        echo "  deploy   Validate config and reload all domains"
+        echo "  check    Validate HA configuration only"
+        echo "  reload   Reload all reloadable HA domains"
+        echo "  restart  Full HA core restart (30-60s downtime)"
+        return 0
+    fi
     shift
 
     case "$subcmd" in
