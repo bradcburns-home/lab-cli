@@ -1,0 +1,149 @@
+{
+  "health_logger": {
+    "compose": "/srv/shared/mcp_endpoints/health_logger/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "health-log-prod",
+    "health": "docker exec health-log-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "loki_logs": {
+    "compose": "/srv/shared/mcp_endpoints/loki_logs/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "loki-logs-prod",
+    "health": "docker exec loki-logs-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "issue_manager": {
+    "compose": "/srv/shared/mcp_endpoints/issue_manager/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "issue-manager-prod",
+    "health": "docker exec issue-manager-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "voice_search": {
+    "compose": "/srv/shared/mcp_endpoints/voice_search/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "voice-search-prod",
+    "health": "curl -sf http://localhost:8300/health",
+    "env_mode": "single"
+  },
+  "filing_cabinet": {
+    "compose": "/srv/shared/mcp_endpoints/filing_cabinet/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "filing-cabinet-mcp-prod",
+    "health": "curl -sf http://localhost:8303/health",
+    "env_mode": "single"
+  },
+  "bookshelf": {
+    "compose": "/srv/shared/mcp_endpoints/bookshelf/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "bookshelf-mcp-prod",
+    "health": "curl -sf http://localhost:8302/health",
+    "env_mode": "single"
+  },
+  "librarian": {
+    "compose": "/srv/shared/mcp_endpoints/librarian/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "librarian-prod",
+    "health": "curl -sf http://localhost:8304/health",
+    "env_mode": "single"
+  },
+  "current_time": {
+    "compose": "/srv/shared/mcp_endpoints/current_time/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "currenttime-prod",
+    "health": null,
+    "env_mode": "single"
+  },
+  "mcp_gateway": {
+    "compose": "/srv/shared/mcp-gateway/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "mcp-gateway",
+    "health": "curl -sf http://localhost:8400/health",
+    "env_mode": "single"
+  },
+  "docs_api": {
+    "compose": "/srv/shared/docs_api/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "docs-api-prod",
+    "health": "curl -sf http://localhost:8301/health",
+    "env_mode": "single"
+  },
+  "health_log_api": {
+    "compose": "/srv/shared/health_log_api/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "health-log-api-prod",
+    "health": "docker exec health-log-api-prod curl -sf http://localhost:8090/health",
+    "env_mode": "single"
+  },
+  "health_log_portal": {
+    "compose": "/srv/health_log_portal/docker-compose.yaml",
+    "repo": "/srv/health_log_portal",
+    "container": "health-log-portal-{env}",
+    "health": "curl -sf http://127.0.0.1:8085/health",
+    "env_mode": "split"
+  },
+  "cortex": {
+    "compose": "/srv/cortex/docker-compose.yaml",
+    "repo": "/srv/cortex",
+    "container": "cortex",
+    "health": null,
+    "env_mode": "single"
+  },
+  "voice_bridge": {
+    "compose": "/srv/voice_bridge_{env}/docker-compose.yaml",
+    "repo": "/srv/voice_bridge_{env}",
+    "container": "voice-bridge-backend-{env}",
+    "health": "docker exec voice-bridge-backend-{env} curl -sf http://localhost:8000/health",
+    "env_mode": "split"
+  },
+  "observability": {
+    "compose": "/srv/shared/observability/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "vector",
+    "health": null,
+    "env_mode": "single"
+  },
+  "ha_dev": {
+    "compose": "/srv/shared/mcp_endpoints/ha_dev/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "ha-dev-prod",
+    "health": "docker exec ha-dev-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "mosquitto": {
+    "compose": "/srv/shared/mosquitto/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "mosquitto-prod",
+    "health": "docker exec mosquitto-prod mosquitto_pub -t '$SYS/test' -m 'ping' && echo ok",
+    "env_mode": "single"
+  },
+  "home_sensors": {
+    "compose": "/srv/shared/mcp_endpoints/home_sensors/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "home-sensors-prod",
+    "health": "curl -sf http://localhost:8306/health",
+    "env_mode": "single"
+  },
+  "redpanda_connect": {
+    "compose": "/srv/shared/redpanda_connect/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "redpanda-connect-prod",
+    "health": "docker inspect --format='{{.State.Running}}' redpanda-connect-prod | grep true",
+    "env_mode": "single"
+  },
+  "home_maintenance": {
+    "compose": "/srv/shared/mcp_endpoints/home_maintenance/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "home-maintenance-prod",
+    "health": "docker exec home-maintenance-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "librechat": {
+    "compose": "/srv/librechat/docker-compose.yml",
+    "repo": null,
+    "container": "librechat-prod",
+    "health": "docker exec librechat-prod node -e \"require('http').get('http://127.0.0.1:3080/',{timeout:5000},r=>process.exit(r.statusCode<400?0:1)).on('error',()=>process.exit(1))\"",
+    "env_mode": "single"
+  }
+}

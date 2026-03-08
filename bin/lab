@@ -1,0 +1,380 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REGISTRY="/srv/.lab-services.json"
+DEFAULT_ENV="prod"
+
+# ── Colors ────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+_info()  { echo -e "${CYAN}▸${NC} $*"; }
+_ok()    { echo -e "${GREEN}✓${NC} $*"; }
+_warn()  { echo -e "${YELLOW}!${NC} $*"; }
+_err()   { echo -e "${RED}✗${NC} $*" >&2; }
+
+# ── Registry helpers ──────────────────────────────────────────────────────
+
+_get() {
+    jq -r --arg svc "$1" --arg key "$2" '.[$svc][$key] // empty' "$REGISTRY"
+}
+
+_resolve_path() {
+    local template="$1" env="$2"
+    echo "${template//\{env\}/$env}"
+}
+
+_list_services() {
+    jq -r 'keys[]' "$REGISTRY" | sort
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────
+
+cmd_deploy() {
+    local svc="${1:?Usage: lab deploy <service> [dev|prod] [--no-cache]}"
+    shift
+    local env="$DEFAULT_ENV"
+    local no_cache=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            dev|prod) env="$1" ;;
+            --no-cache) no_cache="--no-cache" ;;
+            *) _err "Unknown argument: $1"; return 1 ;;
+        esac
+        shift
+    done
+
+    if ! jq -e --arg svc "$svc" 'has($svc)' "$REGISTRY" >/dev/null 2>&1; then
+        _err "Unknown service: $svc"
+        echo "Available services:"
+        _list_services | sed 's/^/  /'
+        return 1
+    fi
+
+    local compose repo container health
+    compose=$(_resolve_path "$(_get "$svc" "compose")" "$env")
+    repo=$(_resolve_path "$(_get "$svc" "repo")" "$env")
+    container=$(_resolve_path "$(_get "$svc" "container")" "$env")
+    health=$(_resolve_path "$(_get "$svc" "health")" "$env")
+
+    local branch
+    [[ "$env" == "prod" ]] && branch="main" || branch="dev"
+
+    echo ""
+    echo -e "${BOLD}Deploying ${CYAN}${svc}${NC} ${BOLD}(${env})${NC}"
+    echo -e "  compose:   ${compose}"
+    echo -e "  repo:      ${repo}"
+    echo -e "  branch:    ${branch}"
+    echo ""
+
+    local compose_dir compose_file
+    compose_dir=$(dirname "$compose")
+    compose_file=$(basename "$compose")
+
+    if [[ -n "$repo" ]]; then
+        _info "Pulling latest from ${branch}..."
+        if ! (cd "$repo" && git pull origin "$branch" 2>&1); then
+            _err "git pull failed"
+            return 1
+        fi
+
+        # Step 2a: build
+        _info "Building (${no_cache:-cached})..."
+        if ! (cd "$compose_dir" && docker compose -f "$compose_file" build $no_cache 2>&1); then
+            _err "Build failed"
+            return 1
+        fi
+    else
+        _warn "No git repo configured — skipping git pull"
+        _info "Pulling latest images..."
+        if ! (cd "$compose_dir" && docker compose -f "$compose_file" pull 2>&1); then
+            _err "Image pull failed"
+            return 1
+        fi
+    fi
+
+    # Step 3: up
+    _info "Starting container..."
+    if ! (cd "$compose_dir" && docker compose -f "$compose_file" up -d 2>&1); then
+        _err "Failed to start container"
+        return 1
+    fi
+
+    # Step 4: health check
+    if [[ -n "$health" ]]; then
+        _info "Waiting for health check..."
+        local attempts=0
+        local max_attempts=15
+        while [[ $attempts -lt $max_attempts ]]; do
+            sleep 2
+            if eval "$health" >/dev/null 2>&1; then
+                _ok "Health check passed"
+                break
+            fi
+            attempts=$((attempts + 1))
+        done
+        if [[ $attempts -ge $max_attempts ]]; then
+            _warn "Health check did not pass after ${max_attempts} attempts"
+            _info "Checking logs..."
+            docker logs "$container" --tail 20 2>&1
+            return 1
+        fi
+    else
+        sleep 3
+        if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+            _ok "Container running (no health endpoint)"
+        else
+            _err "Container not running"
+            docker logs "$container" --tail 20 2>&1
+            return 1
+        fi
+    fi
+
+    # Step 5: clean logs check
+    _info "Last few log lines:"
+    docker logs "$container" --tail 5 2>&1 | sed 's/^/  /'
+
+    echo ""
+    _ok "${BOLD}${svc}${NC} deployed successfully (${env})"
+}
+
+cmd_test() {
+    local svc="${1:?Usage: lab test <service>}"
+
+    if ! jq -e --arg svc "$svc" 'has($svc)' "$REGISTRY" >/dev/null 2>&1; then
+        _err "Unknown service: $svc"
+        return 1
+    fi
+
+    local compose
+    compose=$(_resolve_path "$(_get "$svc" "compose")" "$DEFAULT_ENV")
+    local compose_dir
+    compose_dir=$(dirname "$compose")
+
+    if [[ -f "${compose_dir}/.venv/bin/python" ]]; then
+        _info "Running pytest via local venv..."
+        (cd "$compose_dir" && .venv/bin/python -m pytest tests/ -x -q)
+    else
+        _info "No local venv found. Running pytest via docker build..."
+        local compose_file
+        compose_file=$(basename "$compose")
+        (cd "$compose_dir" && docker compose -f "$compose_file" build --no-cache)
+    fi
+}
+
+cmd_logs() {
+    local svc="${1:?Usage: lab logs <service> [--tail N] [dev|prod]}"
+    shift
+    local tail_n=50
+    local env="$DEFAULT_ENV"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tail) tail_n="${2:?--tail requires a number}"; shift ;;
+            dev|prod) env="$1" ;;
+            *) _err "Unknown argument: $1"; return 1 ;;
+        esac
+        shift
+    done
+
+    if ! jq -e --arg svc "$svc" 'has($svc)' "$REGISTRY" >/dev/null 2>&1; then
+        _err "Unknown service: $svc"
+        return 1
+    fi
+
+    local container
+    container=$(_resolve_path "$(_get "$svc" "container")" "$env")
+    docker logs "$container" --tail "$tail_n" 2>&1
+}
+
+cmd_health() {
+    local filter="${1:-}"
+
+    echo -e "${BOLD}Service Health${NC}"
+    echo ""
+
+    for svc in $(_list_services); do
+        if [[ -n "$filter" && "$svc" != "$filter" ]]; then
+            continue
+        fi
+
+        local container health
+        container=$(_resolve_path "$(_get "$svc" "container")" "$DEFAULT_ENV")
+        health=$(_resolve_path "$(_get "$svc" "health")" "$DEFAULT_ENV")
+
+        local running
+        running=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -c "^${container}$" || true)
+
+        if [[ "$running" -eq 0 ]]; then
+            echo -e "  ${RED}●${NC} ${svc} — stopped"
+            continue
+        fi
+
+        if [[ -n "$health" ]]; then
+            if eval "$health" >/dev/null 2>&1; then
+                echo -e "  ${GREEN}●${NC} ${svc} — healthy"
+            else
+                echo -e "  ${YELLOW}●${NC} ${svc} — running, health check failed"
+            fi
+        else
+            echo -e "  ${GREEN}●${NC} ${svc} — running (no health endpoint)"
+        fi
+    done
+    echo ""
+}
+
+cmd_list() {
+    echo -e "${BOLD}Registered Services${NC}"
+    echo ""
+    printf "  %-20s %-8s %s\n" "SERVICE" "ENV" "COMPOSE"
+    printf "  %-20s %-8s %s\n" "-------" "---" "-------"
+    for svc in $(_list_services); do
+        local compose env_mode
+        compose=$(_get "$svc" "compose")
+        env_mode=$(_get "$svc" "env_mode")
+        printf "  %-20s %-8s %s\n" "$svc" "$env_mode" "$compose"
+    done
+    echo ""
+}
+
+# ── Home Assistant ────────────────────────────────────────────────────────
+
+HA_URL="https://homeassistant.burnses.net"
+HA_TOKEN_FILE="/srv/shared/mcp-gateway/.env"
+
+_ha_token() {
+    grep '^HA_TOKEN=' "$HA_TOKEN_FILE" 2>/dev/null | cut -d= -f2-
+}
+
+_ha_api() {
+    local method="$1" path="$2"
+    local token
+    token=$(_ha_token)
+    if [[ -z "$token" ]]; then
+        _err "HA_TOKEN not found in $HA_TOKEN_FILE"
+        return 1
+    fi
+    curl -sf -X "$method" \
+        -H "Authorization: Bearer $token" \
+        -H "Content-Type: application/json" \
+        "${HA_URL}${path}"
+}
+
+cmd_ha() {
+    local subcmd="${1:?Usage: lab ha <deploy|check|reload|restart>}"
+    shift
+
+    case "$subcmd" in
+        check)   _ha_check ;;
+        reload)  _ha_reload ;;
+        deploy)  _ha_check && _ha_reload ;;
+        restart) _ha_restart ;;
+        *)
+            _err "Unknown ha subcommand: $subcmd"
+            echo "Usage: lab ha <deploy|check|reload|restart>"
+            return 1
+            ;;
+    esac
+}
+
+_ha_check() {
+    _info "Validating HA configuration..."
+    local result
+    result=$(_ha_api POST "/api/config/core/check_config") || {
+        _err "Failed to reach HA API"
+        return 1
+    }
+    local check_result
+    check_result=$(echo "$result" | jq -r '.result // "unknown"')
+    if [[ "$check_result" == "valid" ]]; then
+        _ok "Configuration is valid"
+        return 0
+    else
+        _err "Configuration is invalid:"
+        echo "$result" | jq -r '.errors // .error // .' 2>/dev/null | sed 's/^/  /'
+        return 1
+    fi
+}
+
+_ha_reload() {
+    _info "Reloading HA domains..."
+
+    local domains=(
+        "homeassistant/reload_core_config"
+        "automation/reload"
+        "script/reload"
+        "scene/reload"
+        "rest_command/reload"
+        "template/reload"
+        "input_boolean/reload"
+        "input_number/reload"
+        "input_select/reload"
+        "input_text/reload"
+        "group/reload"
+    )
+
+    local failed=0
+    for domain_action in "${domains[@]}"; do
+        local domain="${domain_action%%/*}"
+        if _ha_api POST "/api/services/${domain_action}" >/dev/null 2>&1; then
+            echo -e "  ${GREEN}✓${NC} ${domain}"
+        else
+            echo -e "  ${YELLOW}⚠${NC} ${domain} (reload not available or failed)"
+            failed=$((failed + 1))
+        fi
+    done
+
+    if [[ $failed -eq 0 ]]; then
+        _ok "All domains reloaded"
+    else
+        _warn "${failed} domain(s) could not be reloaded (may not support hot-reload)"
+    fi
+}
+
+_ha_restart() {
+    _warn "Restarting HA core (this takes 30-60 seconds)..."
+    _ha_api POST "/api/services/homeassistant/restart" >/dev/null 2>&1 || true
+    _info "Restart initiated. HA will be briefly unavailable."
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────
+
+cmd="${1:-help}"
+shift 2>/dev/null || true
+
+case "$cmd" in
+    deploy)  cmd_deploy "$@" ;;
+    test)    cmd_test "$@" ;;
+    logs)    cmd_logs "$@" ;;
+    health)  cmd_health "$@" ;;
+    list)    cmd_list "$@" ;;
+    ha)      cmd_ha "$@" ;;
+    help|--help|-h)
+        echo "Usage: lab <command> [args]"
+        echo ""
+        echo "Commands:"
+        echo "  deploy <service> [dev|prod] [--no-cache]   Build and deploy a service"
+        echo "  test   <service>                           Run tests for a service"
+        echo "  logs   <service> [--tail N] [dev|prod]     View container logs"
+        echo "  health [service]                           Check service health"
+        echo "  list                                       List all registered services"
+        echo ""
+        echo "  ha deploy    Validate HA config and reload all domains"
+        echo "  ha check     Validate HA config only"
+        echo "  ha reload    Reload all reloadable HA domains"
+        echo "  ha restart   Full HA core restart"
+        echo ""
+        echo "Services:"
+        _list_services | sed 's/^/  /'
+        ;;
+    *)
+        _err "Unknown command: $cmd"
+        echo "Run 'lab help' for usage."
+        exit 1
+        ;;
+esac
