@@ -139,6 +139,13 @@
     "health": "docker exec home-maintenance-prod curl -sf http://localhost:8000/health",
     "env_mode": "single"
   },
+  "nut": {
+    "compose": "/srv/shared/nut/docker-compose.yaml",
+    "repo": "/srv/shared/nut",
+    "container": "nut-prod",
+    "health": "docker exec nut-prod upsc eaton@localhost battery.charge 2>/dev/null | grep -q '^[0-9]'",
+    "env_mode": "single"
+  },
   "librechat": {
     "compose": "/srv/librechat/docker-compose.yml",
     "repo": null,
