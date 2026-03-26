@@ -121,9 +121,9 @@ cmd_deploy() {
         fi
     fi
 
-    # Step 3: up
+    # Step 3: up (--force-recreate ensures bind-mounted config changes take effect)
     _info "Starting container..."
-    if ! (cd "$compose_dir" && docker compose -f "$compose_file" up -d 2>&1); then
+    if ! (cd "$compose_dir" && docker compose -f "$compose_file" up -d --force-recreate 2>&1); then
         _err "Failed to start container"
         return 1
     fi
