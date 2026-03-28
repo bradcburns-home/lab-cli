@@ -132,7 +132,9 @@ cmd_deploy() {
     if [[ -n "$health" ]]; then
         _info "Waiting for health check..."
         local attempts=0
-        local max_attempts=15
+        local max_attempts
+        max_attempts=$(_get "$svc" "health_attempts")
+        max_attempts=${max_attempts:-15}
         while [[ $attempts -lt $max_attempts ]]; do
             sleep 2
             if eval "$health" >/dev/null 2>&1; then

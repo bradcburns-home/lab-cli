@@ -146,11 +146,75 @@
     "health": "docker exec nut-prod upsc eaton@localhost battery.charge 2>/dev/null | grep -q '^[0-9]'",
     "env_mode": "single"
   },
+  "ups_web": {
+    "compose": "/srv/shared/nut/docker-compose.yaml",
+    "repo": "/srv/shared/nut",
+    "container": "ups-web-prod",
+    "health": "curl -sf http://localhost:8308/health",
+    "env_mode": "single"
+  },
   "librechat": {
     "compose": "/srv/librechat/docker-compose.yml",
     "repo": null,
     "container": "librechat-prod",
     "health": "docker exec librechat-prod node -e \"require('http').get('http://127.0.0.1:3080/',{timeout:5000},r=>process.exit(r.statusCode<400?0:1)).on('error',()=>process.exit(1))\"",
+    "health_attempts": 30,
+    "env_mode": "single"
+  },
+  "backup_agent": {
+    "compose": "/srv/backup_agent/docker-compose.yaml",
+    "repo": "/srv/backup_agent",
+    "container": "backup-agent-prod",
+    "health": "curl -sf http://localhost:8310/health",
+    "env_mode": "single"
+  },
+  "pubmed_search": {
+    "compose": "/srv/shared/mcp_endpoints/pubmed_search/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "pubmed-search-prod",
+    "health": "docker exec pubmed-search-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "postgres": {
+    "compose": "/srv/postgres/docker-compose.yaml",
+    "repo": null,
+    "container": "postgres-shared",
+    "health": "docker exec postgres-shared pg_isready -U postgres",
+    "env_mode": "single"
+  },
+  "agent_hub": {
+    "compose": "/srv/shared/mcp_endpoints/agent_hub/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "agent-hub-prod",
+    "health": "docker exec agent-hub-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "fax_mcp": {
+    "compose": "/srv/shared/mcp_endpoints/fax_mcp/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "fax-mcp-prod",
+    "health": "docker exec fax-mcp-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "agent_dashboard": {
+    "compose": "/srv/shared/agent_dashboard/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "agent-dashboard-prod",
+    "health": "docker exec agent-dashboard-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "fax_api": {
+    "compose": "/srv/shared/fax_api/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "fax-api-prod",
+    "health": "curl -sf http://localhost:8309/health",
+    "env_mode": "single"
+  },
+  "fax_app": {
+    "compose": "/srv/shared/fax_app/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "fax-app-prod",
+    "health": "curl -sf http://localhost:8315/health",
     "env_mode": "single"
   }
 }
