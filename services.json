@@ -216,5 +216,12 @@
     "container": "fax-app-prod",
     "health": "curl -sf http://localhost:8315/health",
     "env_mode": "single"
+  },
+  "google_calendar": {
+    "compose": "/srv/shared/mcp_endpoints/google_calendar/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "google-calendar-prod",
+    "health": "docker exec google-calendar-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
   }
 }
