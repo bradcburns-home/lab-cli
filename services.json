@@ -48,6 +48,20 @@
     "health": "curl -sf http://localhost:8304/health",
     "env_mode": "single"
   },
+  "biographer": {
+    "compose": "/srv/shared/mcp_endpoints/biographer/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "biographer-prod",
+    "health": "curl -sf http://localhost:8311/health",
+    "env_mode": "single"
+  },
+  "sleep_cycle": {
+    "compose": "/srv/sleep_cycle/docker-compose.yaml",
+    "repo": "/srv/sleep_cycle",
+    "container": "sleep-cycle-prod",
+    "health": "docker exec sleep-cycle-prod test -f /tmp/.test-passed && echo healthy",
+    "env_mode": "single"
+  },
   "current_time": {
     "compose": "/srv/shared/mcp_endpoints/current_time/docker-compose.yaml",
     "repo": "/srv/shared",
@@ -88,7 +102,8 @@
     "repo": "/srv/health_log_portal",
     "container": "health-log-portal-{env}",
     "health": "curl -sf http://127.0.0.1:8085/health",
-    "env_mode": "split"
+    "env_mode": "split",
+    "pre_build": "cd frontend && npm run build"
   },
   "cortex": {
     "compose": "/srv/cortex/docker-compose.yaml",
@@ -203,6 +218,13 @@
     "health": "docker exec fax-mcp-prod curl -sf http://localhost:8000/health",
     "env_mode": "single"
   },
+  "onekey": {
+    "compose": "/srv/shared/mcp_endpoints/onekey/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "onekey-prod",
+    "health": "curl -sf http://localhost:8317/health",
+    "env_mode": "single"
+  },
   "agent_dashboard": {
     "compose": "/srv/shared/agent_dashboard/docker-compose.yaml",
     "repo": "/srv/shared",
@@ -229,6 +251,27 @@
     "repo": "/srv/shared",
     "container": "google-calendar-prod",
     "health": "docker exec google-calendar-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "meds_app": {
+    "compose": "/srv/meds_app/docker-compose.yaml",
+    "repo": null,
+    "container": "meds-app-prod",
+    "health": "docker exec meds-app-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "sensor_dashboard": {
+    "compose": "/srv/shared/sensor_dashboard/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "sensor-dashboard-prod",
+    "health": "docker exec sensor-dashboard-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
+  "steam_mcp": {
+    "compose": "/srv/shared/mcp_endpoints/steam/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "steam-prod",
+    "health": "curl -sf http://localhost:8318/health",
     "env_mode": "single"
   }
 }
