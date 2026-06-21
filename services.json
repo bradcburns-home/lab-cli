@@ -273,5 +273,12 @@
     "container": "steam-prod",
     "health": "curl -sf http://localhost:8318/health",
     "env_mode": "single"
+  },
+  "burns_config": {
+    "compose": "/srv/shared/burns_config/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "burns-config-prod",
+    "health": "curl -sf http://localhost:8410/health",
+    "env_mode": "single"
   }
 }

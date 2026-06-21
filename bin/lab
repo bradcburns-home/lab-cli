@@ -106,7 +106,18 @@ cmd_deploy() {
             return 1
         fi
 
-        # Step 2a: build
+        # Step 2a: pre-build hook (e.g. frontend build)
+        local pre_build
+        pre_build=$(_get "$svc" "pre_build")
+        if [[ -n "$pre_build" ]]; then
+            _info "Running pre-build hook..."
+            if ! (cd "$compose_dir" && eval "$pre_build" 2>&1); then
+                _err "Pre-build hook failed"
+                return 1
+            fi
+        fi
+
+        # Step 2b: docker build
         _info "Building (${no_cache:-cached})..."
         if ! (cd "$compose_dir" && docker compose -f "$compose_file" build $no_cache 2>&1); then
             _err "Build failed"
