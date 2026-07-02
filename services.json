@@ -285,7 +285,7 @@
     "compose": "/srv/shared/mcp_endpoints/plaid/docker-compose.yaml",
     "repo": "/srv/shared",
     "container": "plaid-mcp-prod",
-    "health": "curl -sf http://localhost:8320/health",
+    "health": "curl -sf http://localhost:8321/health",
     "env_mode": "single"
   }
 }
