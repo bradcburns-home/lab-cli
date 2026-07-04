@@ -97,6 +97,13 @@
     "health": "docker exec kitchen-api-prod curl -sf http://localhost:8000/health",
     "env_mode": "single"
   },
+  "kitchen_mcp": {
+    "compose": "/srv/shared/mcp_endpoints/kitchen_mcp/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "kitchen-mcp-prod",
+    "health": "curl -sf http://localhost:8322/health",
+    "env_mode": "single"
+  },
   "health_log_portal": {
     "compose": "/srv/health_log_portal/docker-compose.yaml",
     "repo": "/srv/health_log_portal",
