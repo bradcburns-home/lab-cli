@@ -104,6 +104,13 @@
     "health": "curl -sf http://localhost:8322/health",
     "env_mode": "single"
   },
+  "kitchen_terminal": {
+    "compose": "/srv/brad_life_agents_dev/services/kitchen_terminal/docker-compose.yaml",
+    "repo": "/srv/brad_life_agents_dev",
+    "container": "kitchen-terminal-prod",
+    "health": "curl -sf http://127.0.0.1:8323/health",
+    "env_mode": "single"
+  },
   "health_log_portal": {
     "compose": "/srv/health_log_portal/docker-compose.yaml",
     "repo": "/srv/health_log_portal",
