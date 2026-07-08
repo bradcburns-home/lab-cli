@@ -301,5 +301,12 @@
     "container": "plaid-mcp-prod",
     "health": "curl -sf http://localhost:8321/health",
     "env_mode": "single"
+  },
+  "brave_web_search_mcp": {
+    "compose": "/srv/shared/mcp_endpoints/brave_web_search/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "brave-web-search-prod",
+    "health": "docker exec brave-web-search-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
   }
 }
