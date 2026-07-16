@@ -191,7 +191,7 @@
   },
   "librechat": {
     "compose": "/srv/librechat/docker-compose.yml",
-    "repo": null,
+    "repo": "/srv/librechat",
     "container": "librechat-prod",
     "health": "docker exec librechat-prod node -e \"require('http').get('http://127.0.0.1:3080/',{timeout:5000},r=>process.exit(r.statusCode<400?0:1)).on('error',()=>process.exit(1))\"",
     "health_attempts": 30,
