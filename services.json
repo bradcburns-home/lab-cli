@@ -308,5 +308,12 @@
     "container": "brave-web-search-prod",
     "health": "docker exec brave-web-search-prod curl -sf http://localhost:8000/health",
     "env_mode": "single"
+  },
+  "hermes_agent": {
+    "compose": "/srv/hermes_agent/docker-compose.yaml",
+    "repo": null,
+    "container": "hermes-agent",
+    "health": "curl -sf http://172.18.0.1:8642/health",
+    "env_mode": "single"
   }
 }
