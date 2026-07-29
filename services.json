@@ -309,6 +309,13 @@
     "health": "docker exec brave-web-search-prod curl -sf http://localhost:8000/health",
     "env_mode": "single"
   },
+  "mychart": {
+    "compose": "/srv/shared/mcp_endpoints/mychart/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "mychart-prod",
+    "health": "curl -sf http://localhost:8325/health",
+    "env_mode": "single"
+  },
   "hermes_agent": {
     "compose": "/srv/hermes_agent/docker-compose.yaml",
     "repo": null,
