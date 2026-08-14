@@ -327,7 +327,7 @@
     "compose": "/srv/variant/docker-compose.yaml",
     "repo": "/srv/variant",
     "container": "variant-prod",
-    "health": "docker exec variant-prod test -f /tmp/.test-passed && echo healthy",
+    "health": "curl -sf http://localhost:8326/health",
     "env_mode": "single"
   }
 }
