@@ -309,6 +309,13 @@
     "health": "docker exec brave-web-search-prod curl -sf http://localhost:8000/health",
     "env_mode": "single"
   },
+  "interlibrary_loan": {
+    "compose": "/srv/shared/mcp_endpoints/interlibrary_loan/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "interlibrary-loan-prod",
+    "health": "docker exec interlibrary-loan-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single"
+  },
   "mychart": {
     "compose": "/srv/shared/mcp_endpoints/mychart/docker-compose.yaml",
     "repo": "/srv/shared",
