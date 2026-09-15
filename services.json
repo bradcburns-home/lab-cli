@@ -95,14 +95,52 @@
     "repo": "/srv/shared",
     "container": "kitchen-api-prod",
     "health": "docker exec kitchen-api-prod curl -sf http://localhost:8000/health",
-    "env_mode": "single"
+    "env_mode": "single",
+    "test": {
+      "framework": "pytest",
+      "suites": [
+        {
+          "name": "unit_and_route_integration",
+          "tier": 1,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": ".venv/bin/python -m pytest tests/ -x -q"
+        }
+      ]
+    }
   },
   "kitchen_mcp": {
     "compose": "/srv/shared/mcp_endpoints/kitchen_mcp/docker-compose.yaml",
     "repo": "/srv/shared",
     "container": "kitchen-mcp-prod",
     "health": "curl -sf http://localhost:8322/health",
-    "env_mode": "single"
+    "env_mode": "single",
+    "test": {
+      "framework": "pytest",
+      "suites": [
+        {
+          "name": "unit_and_handlers",
+          "tier": 1,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": ".venv/bin/python -m pytest tests/ -x -q"
+        },
+        {
+          "name": "cross_service_integration_and_e2e",
+          "tier": 2,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": "/srv/shared/mcp_endpoints/kitchen_mcp/.venv/bin/python -m pytest /srv/shared/testing/kitchen/ -x -q"
+        },
+        {
+          "name": "acceptance_canary",
+          "tier": 5,
+          "phase": "post_deploy",
+          "required": true,
+          "command": ".venv/bin/python bin/canary.py"
+        }
+      ]
+    }
   },
   "kitchen_terminal": {
     "compose": "/srv/brad_life_agents_dev/services/kitchen_terminal/docker-compose.yaml",
@@ -272,7 +310,28 @@
     "repo": null,
     "container": "meds-app-prod",
     "health": "docker exec meds-app-prod curl -sf http://localhost:8000/health",
-    "env_mode": "single"
+    "env_mode": "single",
+    "test": {
+      "framework": "hybrid",
+      "suites": [
+        {
+          "name": "frontend_unit",
+          "tier": 1,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": "npm test",
+          "working_dir": "frontend"
+        },
+        {
+          "name": "frontend_playwright_e2e",
+          "tier": 4,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": "npm run test:e2e",
+          "working_dir": "frontend"
+        }
+      ]
+    }
   },
   "sensor_dashboard": {
     "compose": "/srv/shared/sensor_dashboard/docker-compose.yaml",

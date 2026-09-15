@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REGISTRY="/srv/.lab-services.json"
+REGISTRY="${LAB_REGISTRY:-/srv/.lab-services.json}"
 DEFAULT_ENV="prod"
 
 # ── Colors ────────────────────────────────────────────────────────────────
@@ -32,30 +32,173 @@ _list_services() {
     jq -r 'keys[]' "$REGISTRY" | sort
 }
 
+_has_test_manifest() {
+    local svc="$1"
+    jq -e --arg svc "$svc" '.[$svc] | has("test") and (.test.suites != null or .test.command != null)' "$REGISTRY" >/dev/null 2>&1
+}
+
+_run_suite() {
+    local svc="$1"
+    local name="$2"
+    local tier="$3"
+    local phase="$4"
+    local required="$5"
+    local cmd="$6"
+    local working_dir="$7"
+    local compose_dir="$8"
+
+    local exec_dir="$compose_dir"
+    if [[ -n "$working_dir" && "$working_dir" != "." ]]; then
+        if [[ "$working_dir" = /* ]]; then
+            exec_dir="$working_dir"
+        else
+            exec_dir="${compose_dir}/${working_dir}"
+        fi
+    fi
+
+    echo ""
+    _info "Running test suite '${BOLD}${name}${NC}' (Tier ${tier}, ${phase})..."
+    echo -e "  dir:     ${exec_dir}"
+    echo -e "  command: ${cmd}"
+
+    if ! (cd "$exec_dir" && eval "$cmd"); then
+        _err "Test suite '${name}' FAILED"
+        return 1
+    fi
+    _ok "Test suite '${name}' PASSED"
+    return 0
+}
+
+_run_pre_deploy_gate() {
+    local svc="$1"
+    local compose_dir="$2"
+    local env="$3"
+
+    if ! _has_test_manifest "$svc"; then
+        _warn "${svc}: legacy service without test manifest. Pre-deploy gate skipped (will become required)."
+        return 0
+    fi
+
+    local suites_json
+    suites_json=$(jq -c --arg svc "$svc" '.[$svc].test.suites // []' "$REGISTRY")
+    local suite_count
+    suite_count=$(echo "$suites_json" | jq '. | length')
+
+    if [[ "$suite_count" -eq 0 ]]; then
+        local simple_cmd
+        simple_cmd=$(jq -r --arg svc "$svc" '.[$svc].test.command // empty' "$REGISTRY")
+        if [[ -n "$simple_cmd" ]]; then
+            _info "Running pre-deploy test command for ${svc}..."
+            if ! (cd "$compose_dir" && eval "$simple_cmd"); then
+                _err "Pre-deploy test failed for ${svc}"
+                return 1
+            fi
+            return 0
+        fi
+        _warn "${svc}: test block defined but no suites configured."
+        return 0
+    fi
+
+    _info "Running required pre-deploy test suites for ${svc}..."
+    local executed=0
+
+    while read -r suite; do
+        [[ -z "$suite" ]] && continue
+        local s_name s_tier s_phase s_req s_cmd s_dir
+        s_name=$(echo "$suite" | jq -r '.name')
+        s_tier=$(echo "$suite" | jq -r '.tier // 1')
+        s_phase=$(echo "$suite" | jq -r '.phase // "pre_deploy"')
+        s_req=$(echo "$suite" | jq -r '.required // true')
+        s_cmd=$(echo "$suite" | jq -r '.command')
+        s_dir=$(echo "$suite" | jq -r '.working_dir // "."')
+
+        if [[ "$s_phase" != "pre_deploy" || "$s_req" != "true" ]]; then
+            continue
+        fi
+
+        executed=$((executed + 1))
+        if ! _run_suite "$svc" "$s_name" "$s_tier" "$s_phase" "$s_req" "$s_cmd" "$s_dir" "$compose_dir"; then
+            _err "Pre-deploy test gate FAILED on suite '${s_name}' for ${svc}. Aborting deployment."
+            return 1
+        fi
+    done < <(echo "$suites_json" | jq -c '.[]')
+
+    if [[ "$executed" -eq 0 ]]; then
+        _warn "${svc}: no required pre-deploy suites found in manifest."
+    else
+        _ok "Pre-deploy test gate PASSED (${executed} suite(s) verified)"
+    fi
+    return 0
+}
+
+_run_post_deploy_gate() {
+    local svc="$1"
+    local compose_dir="$2"
+    local env="$3"
+
+    if ! _has_test_manifest "$svc"; then
+        return 0
+    fi
+
+    local suites_json
+    suites_json=$(jq -c --arg svc "$svc" '.[$svc].test.suites // []' "$REGISTRY")
+    local executed=0
+
+    while read -r suite; do
+        [[ -z "$suite" ]] && continue
+        local s_name s_tier s_phase s_req s_cmd s_dir
+        s_name=$(echo "$suite" | jq -r '.name')
+        s_tier=$(echo "$suite" | jq -r '.tier // 5')
+        s_phase=$(echo "$suite" | jq -r '.phase // "post_deploy"')
+        s_req=$(echo "$suite" | jq -r '.required // true')
+        s_cmd=$(echo "$suite" | jq -r '.command')
+        s_dir=$(echo "$suite" | jq -r '.working_dir // "."')
+
+        if [[ "$s_phase" != "post_deploy" || "$s_req" != "true" ]]; then
+            continue
+        fi
+
+        executed=$((executed + 1))
+        _info "Running post-deploy canary suite '${s_name}' for ${svc}..."
+        if ! _run_suite "$svc" "$s_name" "$s_tier" "$s_phase" "$s_req" "$s_cmd" "$s_dir" "$compose_dir"; then
+            _err "Post-deploy canary '${s_name}' FAILED for ${svc}!"
+            return 1
+        fi
+    done < <(echo "$suites_json" | jq -c '.[]')
+
+    if [[ "$executed" -gt 0 ]]; then
+        _ok "Post-deploy acceptance canary PASSED (${executed} suite(s))"
+    fi
+    return 0
+}
+
 # ── Commands ──────────────────────────────────────────────────────────────
 
 cmd_deploy() {
-    local svc="${1:?Usage: lab deploy <service> [dev|prod] [--no-cache]}"
+    local svc="${1:?Usage: lab deploy <service> [dev|prod] [--no-cache] [--skip-test-gate]}"
     if [[ "$svc" == "--help" || "$svc" == "-h" ]]; then
-        echo "Usage: lab deploy <service> [dev|prod] [--no-cache]"
+        echo "Usage: lab deploy <service> [dev|prod] [--no-cache] [--skip-test-gate]"
         echo ""
-        echo "Pull, build, start, health-check, and tail logs for a service."
+        echo "Pull, verify test gates, build, start, health-check, and tail logs for a service."
         echo ""
         echo "Options:"
-        echo "  dev|prod     Target environment. Required for split-env services"
-        echo "               (e.g. voice_bridge). Defaults to prod if omitted —"
-        echo "               a warning is shown for split-env services."
-        echo "  --no-cache   Force a full Docker rebuild (skip layer cache)."
+        echo "  dev|prod            Target environment. Required for split-env services"
+        echo "                      (e.g. voice_bridge). Defaults to prod if omitted —"
+        echo "                      a warning is shown for split-env services."
+        echo "  --no-cache          Force a full Docker rebuild (skip layer cache)."
+        echo "  --skip-test-gate    Bypass pre-deploy test gate verification (emergency only)."
         return 0
     fi
     shift
     local env=""
     local no_cache=""
+    local skip_test_gate=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             dev|prod) env="$1" ;;
             --no-cache) no_cache="--no-cache" ;;
+            --skip-test-gate) skip_test_gate="true" ;;
             -h|--help) cmd_deploy --help; return 0 ;;
             *) _err "Unknown argument: $1"; return 1 ;;
         esac
@@ -105,26 +248,38 @@ cmd_deploy() {
             _err "git pull failed"
             return 1
         fi
+    else
+        _warn "No git repo configured — skipping git pull"
+    fi
 
-        # Step 2a: pre-build hook (e.g. frontend build)
-        local pre_build
-        pre_build=$(_get "$svc" "pre_build")
-        if [[ -n "$pre_build" ]]; then
-            _info "Running pre-build hook..."
-            if ! (cd "$compose_dir" && eval "$pre_build" 2>&1); then
-                _err "Pre-build hook failed"
-                return 1
-            fi
+    # Step 2: Pre-deploy test gate
+    if [[ -n "$skip_test_gate" ]]; then
+        _warn "SKIPPING pre-deploy test gate for ${svc} (--skip-test-gate specified)"
+    else
+        if ! _run_pre_deploy_gate "$svc" "$compose_dir" "$env"; then
+            return 1
         fi
+    fi
 
-        # Step 2b: docker build
+    # Step 3a: pre-build hook (e.g. frontend build)
+    local pre_build
+    pre_build=$(_get "$svc" "pre_build")
+    if [[ -n "$pre_build" ]]; then
+        _info "Running pre-build hook..."
+        if ! (cd "$compose_dir" && eval "$pre_build" 2>&1); then
+            _err "Pre-build hook failed"
+            return 1
+        fi
+    fi
+
+    # Step 3b: docker build or pull
+    if [[ -n "$repo" ]]; then
         _info "Building (${no_cache:-cached})..."
         if ! (cd "$compose_dir" && docker compose -f "$compose_file" build $no_cache 2>&1); then
             _err "Build failed"
             return 1
         fi
     else
-        _warn "No git repo configured — skipping git pull"
         _info "Pulling latest images..."
         if ! (cd "$compose_dir" && docker compose -f "$compose_file" pull 2>&1); then
             _err "Image pull failed"
@@ -132,14 +287,14 @@ cmd_deploy() {
         fi
     fi
 
-    # Step 3: up (--force-recreate ensures bind-mounted config changes take effect)
+    # Step 4: up (--force-recreate ensures bind-mounted config changes take effect)
     _info "Starting container..."
     if ! (cd "$compose_dir" && docker compose -f "$compose_file" up -d --force-recreate 2>&1); then
         _err "Failed to start container"
         return 1
     fi
 
-    # Step 4: health check
+    # Step 5: health check
     if [[ -n "$health" ]]; then
         _info "Waiting for health check..."
         local attempts=0
@@ -171,7 +326,13 @@ cmd_deploy() {
         fi
     fi
 
-    # Step 5: clean logs check
+    # Step 6: Post-deploy acceptance canary gate
+    if ! _run_post_deploy_gate "$svc" "$compose_dir" "$env"; then
+        _err "Deployment completed but post-deploy canary verification FAILED"
+        return 1
+    fi
+
+    # Step 7: clean logs check
     _info "Last few log lines:"
     docker logs "$container" --tail 5 2>&1 | sed 's/^/  /'
 
@@ -180,14 +341,36 @@ cmd_deploy() {
 }
 
 cmd_test() {
-    local svc="${1:?Usage: lab test <service>}"
+    local svc="${1:?Usage: lab test <service> [--tier N] [--live] [dev|prod]}"
     if [[ "$svc" == "--help" || "$svc" == "-h" ]]; then
-        echo "Usage: lab test <service>"
+        echo "Usage: lab test <service> [--tier N] [--live] [dev|prod]"
         echo ""
-        echo "Run pytest for a service. Uses the local venv if one exists,"
-        echo "otherwise runs tests via docker build."
+        echo "Run tests for a service. Uses structured test manifest from"
+        echo "services.json if present; otherwise falls back to local venv"
+        echo "or docker build."
+        echo ""
+        echo "Options:"
+        echo "  --tier N     Run only suites matching Tier N (1=unit, 2=integration, 3=e2e, 4=browser, 5=live)"
+        echo "  --live       Include post-deploy / live acceptance canary suites (Tier 5)"
+        echo "  dev|prod     Target environment for split-env services (default: prod)"
         return 0
     fi
+    shift
+
+    local tier_filter=""
+    local live_mode=""
+    local env="$DEFAULT_ENV"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tier) tier_filter="${2:?--tier requires a number (1-5)}"; shift ;;
+            --live) live_mode="true" ;;
+            dev|prod) env="$1" ;;
+            -h|--help) cmd_test --help; return 0 ;;
+            *) _err "Unknown argument: $1"; return 1 ;;
+        esac
+        shift
+    done
 
     if ! jq -e --arg svc "$svc" 'has($svc)' "$REGISTRY" >/dev/null 2>&1; then
         _err "Unknown service: $svc"
@@ -195,10 +378,77 @@ cmd_test() {
     fi
 
     local compose
-    compose=$(_resolve_path "$(_get "$svc" "compose")" "$DEFAULT_ENV")
+    compose=$(_resolve_path "$(_get "$svc" "compose")" "$env")
     local compose_dir
     compose_dir=$(dirname "$compose")
 
+    if _has_test_manifest "$svc"; then
+        local suites_json
+        suites_json=$(jq -c --arg svc "$svc" '.[$svc].test.suites // []' "$REGISTRY")
+        local suite_count
+        suite_count=$(echo "$suites_json" | jq '. | length')
+
+        if [[ "$suite_count" -gt 0 ]]; then
+            local executed=0
+            local failed=0
+
+            while read -r suite; do
+                [[ -z "$suite" ]] && continue
+                local s_name s_tier s_phase s_req s_cmd s_dir
+                s_name=$(echo "$suite" | jq -r '.name')
+                s_tier=$(echo "$suite" | jq -r '.tier // 1')
+                s_phase=$(echo "$suite" | jq -r '.phase // "pre_deploy"')
+                s_req=$(echo "$suite" | jq -r '.required // true')
+                s_cmd=$(echo "$suite" | jq -r '.command')
+                s_dir=$(echo "$suite" | jq -r '.working_dir // "."')
+
+                # Filter by tier if specified
+                if [[ -n "$tier_filter" && "$s_tier" != "$tier_filter" ]]; then
+                    continue
+                fi
+
+                # Filter by phase: pre_deploy by default; post_deploy only if --live or tier 5
+                if [[ -z "$live_mode" && "$tier_filter" != "5" && "$s_phase" == "post_deploy" ]]; then
+                    continue
+                fi
+
+                executed=$((executed + 1))
+                if ! _run_suite "$svc" "$s_name" "$s_tier" "$s_phase" "$s_req" "$s_cmd" "$s_dir" "$compose_dir"; then
+                    failed=$((failed + 1))
+                    if [[ "$s_req" == "true" ]]; then
+                        _err "Required test suite '${s_name}' failed for ${svc}"
+                        return 1
+                    fi
+                fi
+            done < <(echo "$suites_json" | jq -c '.[]')
+
+            if [[ "$executed" -eq 0 ]]; then
+                _err "No matching test suites executed for ${svc} (filter tier=${tier_filter:-any}, live=${live_mode:-false})"
+                return 1
+            fi
+
+            if [[ "$failed" -gt 0 ]]; then
+                _err "${failed} test suite(s) failed for ${svc}"
+                return 1
+            fi
+
+            echo ""
+            _ok "All executed test suites PASSED for ${svc}"
+            return 0
+        else
+            # Simple command manifest
+            local simple_cmd
+            simple_cmd=$(jq -r --arg svc "$svc" '.[$svc].test.command // empty' "$REGISTRY")
+            if [[ -n "$simple_cmd" ]]; then
+                _info "Running test command for ${svc}..."
+                (cd "$compose_dir" && eval "$simple_cmd")
+                return $?
+            fi
+        fi
+    fi
+
+    # Fallback to legacy behavior
+    _warn "${svc}: legacy service without test manifest in services.json. Falling back to default pytest."
     if [[ -f "${compose_dir}/.venv/bin/python" ]]; then
         _info "Running pytest via local venv..."
         (cd "$compose_dir" && .venv/bin/python -m pytest tests/ -x -q)
@@ -427,8 +677,8 @@ case "$cmd" in
         echo "Usage: lab <command> [args]"
         echo ""
         echo "Commands:"
-        echo "  deploy <service> [dev|prod] [--no-cache]   Build and deploy a service"
-        echo "  test   <service>                           Run tests for a service"
+        echo "  deploy <service> [dev|prod] [--no-cache] [--skip-test-gate]  Build and deploy a service"
+        echo "  test   <service> [--tier N] [--live] [dev|prod]              Run tests for a service"
         echo "  logs   <service> [--tail N] [dev|prod]     View container logs"
         echo "  health [service]                           Check service health"
         echo "  list                                       List all registered services"
