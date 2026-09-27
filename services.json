@@ -395,5 +395,31 @@
     "container": "variant-prod",
     "health": "curl -sf http://localhost:8326/health",
     "env_mode": "single"
+  },
+  "packing_list": {
+    "compose": "/srv/shared/mcp_endpoints/packing_list/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "packing-list-prod",
+    "health": "docker exec packing-list-prod curl -sf http://localhost:8000/health",
+    "env_mode": "single",
+    "test": {
+      "framework": "pytest",
+      "suites": [
+        {
+          "name": "unit_and_integration",
+          "tier": 1,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": ".venv/bin/python -m pytest tests/ -x -q"
+        },
+        {
+          "name": "acceptance_canary",
+          "tier": 5,
+          "phase": "post_deploy",
+          "required": true,
+          "command": ".venv/bin/python bin/canary.py --url http://localhost:8327"
+        }
+      ]
+    }
   }
 }
