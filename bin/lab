@@ -61,7 +61,11 @@ _run_suite() {
     echo -e "  dir:     ${exec_dir}"
     echo -e "  command: ${cmd}"
 
-    if ! (cd "$exec_dir" && eval "$cmd"); then
+    # The suite list is consumed through process substitution by the caller.
+    # Test commands must not inherit that stdin or commands such as
+    # `docker exec -i` can consume the remaining JSON suite definitions,
+    # silently skipping later required suites.
+    if ! (cd "$exec_dir" && eval "$cmd" < /dev/null); then
         _err "Test suite '${name}' FAILED"
         return 1
     fi

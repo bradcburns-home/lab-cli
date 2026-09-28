@@ -83,6 +83,32 @@ cat > "${TEST_REGISTRY}" <<EOF
       ]
     }
   },
+  "stdin_service": {
+    "compose": "${TMP_DIR}/mock_service/docker-compose.yaml",
+    "repo": null,
+    "container": "mock-stdin",
+    "health": "echo ok",
+    "env_mode": "single",
+    "test": {
+      "framework": "shell",
+      "suites": [
+        {
+          "name": "stdin_consumer",
+          "tier": 1,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": "cat >/dev/null; echo 'stdin consumer passed'"
+        },
+        {
+          "name": "after_stdin",
+          "tier": 2,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": "echo 'suite after stdin passed'"
+        }
+      ]
+    }
+  },
   "legacy_service": {
     "compose": "${TMP_DIR}/mock_service/docker-compose.yaml",
     "repo": null,
@@ -135,5 +161,11 @@ chmod +x "${TMP_DIR}/mock_service/.venv/bin/python"
 output=$("${LAB_BIN}" test legacy_service 2>&1)
 echo "$output" | grep -q "legacy service without test manifest" || { echo "FAILED: legacy warning not emitted"; exit 1; }
 echo "PASS: legacy service warning"
+
+echo "=== Test 6: suite commands cannot consume remaining manifest stdin ==="
+output=$("${LAB_BIN}" test stdin_service 2>&1)
+echo "$output" | grep -q "stdin consumer passed" || { echo "FAILED: stdin consumer did not run"; exit 1; }
+echo "$output" | grep -q "suite after stdin passed" || { echo "FAILED: later suite was consumed from stdin"; exit 1; }
+echo "PASS: suite stdin isolation"
 
 echo "=== ALL LAB TEST RUNNER TESTS PASSED ==="

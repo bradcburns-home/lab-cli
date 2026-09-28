@@ -359,7 +359,40 @@
     "repo": "/srv/shared",
     "container": "plaid-mcp-prod",
     "health": "curl -sf http://localhost:8321/health",
-    "env_mode": "single"
+    "env_mode": "single",
+    "test": {
+      "framework": "pytest",
+      "suites": [
+        {
+          "name": "unit_and_schema",
+          "tier": 1,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": ".venv/bin/pytest tests/test_gemini_schema_compat.py tests/test_liability_projection.py tests/test_serialization.py tests/test_webhook_verification.py -x -q"
+        },
+        {
+          "name": "integration_with_disposable_postgres",
+          "tier": 2,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": "bin/test_with_postgres.sh tests/test_investments.py tests/test_sync_and_tools.py tests/test_planned_liabilities.py -x -q"
+        },
+        {
+          "name": "protocol_e2e",
+          "tier": 3,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": "bin/test_with_postgres.sh tests/test_planning_protocol_e2e.py -x -q"
+        },
+        {
+          "name": "acceptance_canary",
+          "tier": 5,
+          "phase": "post_deploy",
+          "required": true,
+          "command": ".venv/bin/python bin/canary.py"
+        }
+      ]
+    }
   },
   "brave_web_search_mcp": {
     "compose": "/srv/shared/mcp_endpoints/brave_web_search/docker-compose.yaml",
