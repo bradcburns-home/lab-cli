@@ -454,5 +454,45 @@
         }
       ]
     }
+  },
+  "conversation_search": {
+    "compose": "/srv/shared/mcp_endpoints/conversation_search/docker-compose.yaml",
+    "repo": "/srv/shared",
+    "container": "conversation-search-prod",
+    "health": "curl -sf http://localhost:8328/health",
+    "env_mode": "single",
+    "test": {
+      "framework": "pytest",
+      "suites": [
+        {
+          "name": "unit_and_schema",
+          "tier": 1,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": ".venv/bin/pytest tests/ -m 'unit or not (integration or e2e or live)' -x -q"
+        },
+        {
+          "name": "integration_with_postgres",
+          "tier": 2,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": "bin/test_with_postgres.sh tests/ -m integration -x -q"
+        },
+        {
+          "name": "protocol_e2e",
+          "tier": 3,
+          "phase": "pre_deploy",
+          "required": true,
+          "command": "bin/test_with_postgres.sh tests/test_protocol_e2e.py -x -q"
+        },
+        {
+          "name": "acceptance_canary",
+          "tier": 5,
+          "phase": "post_deploy",
+          "required": true,
+          "command": ".venv/bin/python bin/canary.py --url http://localhost:8328"
+        }
+      ]
+    }
   }
 }
